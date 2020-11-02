@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-
 import { Token } from 'markdown-it';
 import * as vscode from 'vscode';
 import { MarkdownEngine } from '../markdownEngine';
@@ -31,7 +30,7 @@ export default class MarkdownSmartSelect implements vscode.SelectionRangeProvide
 
 		const tokens = await this.engine.parse(document);
 
-		let blockTokens = getTokensForPosition(tokens, position);
+		let blockTokens = getTokensForPosition(tokens, position, document);
 
 		if (blockTokens.length === 0) {
 			return undefined;
@@ -87,9 +86,17 @@ function getFirstChildHeader(document: vscode.TextDocument, header?: TocEntry, t
 	return undefined;
 }
 
-function getTokensForPosition(tokens: Token[], position: vscode.Position): Token[] {
-	let enclosingTokens = tokens.filter(token => token.map && (token.map[0] <= position.line && token.map[1] > position.line) && isBlockElement(token));
+function getTokensForPosition(tokens: Token[], position: vscode.Position, document: vscode.TextDocument): Token[] {
+	// since lists have an end range 1 greater than their last item,
+	// need to determine if we're on a list item line
+	// if not, need to filter such that items on the line right after the last list item
+	// aren't associated with the list since they're not a part of it
 
+	let isListItemOnLine: boolean = document.lineAt(position.line).text.match(new RegExp('\\s*\\*[^\\*\\*]')) !== null || document.lineAt(position.line).text.match(new RegExp('\\s*-[^--]')) !== null;
+	let nonListItemTokens = tokens.filter(token => token.map && (isList(token.type) ? (token.map[0] <= position.line && token.map[1] - 1 > position.line) : (token.map[0] <= position.line && token.map[1] > position.line)) && isBlockElement(token));
+	let listItemTokens = tokens.filter(token => token.map && (token.map[0] <= position.line && token.map[1] > position.line) && isBlockElement(token));
+
+	let enclosingTokens = isListItemOnLine ? listItemTokens : nonListItemTokens;
 	if (enclosingTokens.length === 0) {
 		return [];
 	}
@@ -143,13 +150,17 @@ function createBlockRange(document: vscode.TextDocument, cursorLine: number, blo
 			return createFencedRange(block, cursorLine, document, parent);
 		} else {
 			let startLine = document.lineAt(block.map[0]).isEmptyOrWhitespace ? block.map[0] + 1 : block.map[0];
-			let endLine = startLine !== block.map[1] && isList(block.type) ? block.map[1] - 1 : block.map[1];
+			let endLine = startLine === block.map[1] ? block.map[1] : block.map[1] - 1;
+			if (block.type === 'paragraph_open' && block.map[1] - block.map[0] === 2) {
+				startLine = endLine = cursorLine;
+			}
 			let startPos = new vscode.Position(startLine, 0);
-			let endPos = new vscode.Position(endLine, getEndCharacter(document, startLine, endLine));
+			let endPos = new vscode.Position(endLine, document.lineAt(endLine).text.length);
 			let range = new vscode.Range(startPos, endPos);
 			if (parent && parent.range.contains(range) && !parent.range.isEqual(range)) {
 				return new vscode.SelectionRange(range, parent);
 			} else if (parent) {
+				// parent doesn't contain range
 				if (rangeLinesEqual(range, parent.range)) {
 					return range.end.character > parent.range.end.character ? new vscode.SelectionRange(range) : parent;
 				} else if (parent.range.end.line + 1 === range.end.line) {
@@ -160,7 +171,7 @@ function createBlockRange(document: vscode.TextDocument, cursorLine: number, blo
 						return new vscode.SelectionRange(adjustedRange, parent);
 					}
 				} else if (parent.range.end.line === range.end.line) {
-					let adjustedRange = new vscode.Range(parent.range.start, range.end.translate(undefined, parent.range.end.character));
+					let adjustedRange = new vscode.Range(parent.range.start, range.end.translate(undefined, range.end.character));
 					if (adjustedRange.isEqual(parent.range)) {
 						return parent;
 					} else {
@@ -183,7 +194,7 @@ function createFencedRange(token: Token, cursorLine: number, document: vscode.Te
 	const endLine = token.map[1] - 1;
 	let onFenceLine = cursorLine === startLine || cursorLine === endLine;
 	let fenceRange = new vscode.Range(new vscode.Position(startLine, 0), new vscode.Position(endLine, document.lineAt(endLine).text.length));
-	let contentRange = endLine - startLine > 2 && !onFenceLine ? new vscode.Range(new vscode.Position(startLine + 1, 0), new vscode.Position(endLine - 1, getEndCharacter(document, startLine + 1, endLine))) : undefined;
+	let contentRange = endLine - startLine > 2 && !onFenceLine ? new vscode.Range(new vscode.Position(startLine + 1, 0), new vscode.Position(endLine - 1, document.lineAt(endLine - 1).text.length)) : undefined;
 	if (parent && contentRange) {
 		if (parent.range.contains(fenceRange) && !parent.range.isEqual(fenceRange)) {
 			return new vscode.SelectionRange(contentRange, new vscode.SelectionRange(fenceRange, parent));
@@ -216,13 +227,6 @@ function createFencedRange(token: Token, cursorLine: number, document: vscode.Te
 
 function isList(type: string): boolean {
 	return type ? ['ordered_list_open', 'list_item_open', 'bullet_list_open'].includes(type) : false;
-}
-
-function getEndCharacter(document: vscode.TextDocument, startLine: number, endLine: number): number {
-	let startLength = document.lineAt(startLine).text ? document.lineAt(startLine).text.length : 0;
-	let endLength = document.lineAt(startLine).text ? document.lineAt(startLine).text.length : 0;
-	let endChar = Math.max(startLength, endLength);
-	return startLine !== endLine ? 0 : endChar;
 }
 
 function getRealParent(parent: vscode.SelectionRange, range: vscode.Range) {
