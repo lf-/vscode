@@ -92,7 +92,7 @@ function getTokensForPosition(tokens: Token[], position: vscode.Position, docume
 	// if not, need to filter such that items on the line right after the last list item
 	// aren't associated with the list since they're not a part of it
 
-	let isListItemOnLine: boolean = document.lineAt(position.line).text.match(new RegExp('\\s*\\*[^\\*\\*]')) !== null || document.lineAt(position.line).text.match(new RegExp('\\s*-[^--]')) !== null;
+	let isListItemOnLine: boolean = document.lineAt(position.line).text.match(new RegExp('^\\s*(\\*|-)\\s+')) !== null;
 	let nonListItemTokens = tokens.filter(token => token.map && (isList(token.type) ? (token.map[0] <= position.line && token.map[1] - 1 > position.line) : (token.map[0] <= position.line && token.map[1] > position.line)) && isBlockElement(token));
 	let listItemTokens = tokens.filter(token => token.map && (token.map[0] <= position.line && token.map[1] > position.line) && isBlockElement(token));
 
@@ -150,6 +150,8 @@ function createBlockRange(document: vscode.TextDocument, cursorLine: number, blo
 			return createFencedRange(block, cursorLine, document, parent);
 		} else {
 			let startLine = document.lineAt(block.map[0]).isEmptyOrWhitespace ? block.map[0] + 1 : block.map[0];
+			// this line solves the bug where the next line gets
+			// let endLine = startLine === block.map[1] ? block.map[1] : isList(block.type) && document.lineCount > block.map[1] ? block.map[1] - 2 : block.map[1] - 1;
 			let endLine = startLine === block.map[1] ? block.map[1] : block.map[1] - 1;
 			if (block.type === 'paragraph_open' && block.map[1] - block.map[0] === 2) {
 				startLine = endLine = cursorLine;
@@ -159,6 +161,8 @@ function createBlockRange(document: vscode.TextDocument, cursorLine: number, blo
 			let range = new vscode.Range(startPos, endPos);
 			if (parent && parent.range.contains(range) && !parent.range.isEqual(range)) {
 				return new vscode.SelectionRange(range, parent);
+			} else if (parent?.range.isEqual(range)) {
+				return parent;
 			} else if (parent) {
 				// parent doesn't contain range
 				if (rangeLinesEqual(range, parent.range)) {
