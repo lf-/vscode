@@ -30,21 +30,28 @@ export default class MarkdownSmartSelect implements vscode.SelectionRangeProvide
 
 		const tokens = await this.engine.parse(document);
 
-		const blockTokens = getTokensForPosition(tokens, position, document);
+		const blockTokens = getTokensForPosition(tokens, position);
 
 		if (blockTokens.length === 0) {
 			return undefined;
 		}
 
 		let currentRange: vscode.SelectionRange | undefined = headerRange ? headerRange : createBlockRange(blockTokens.shift()!, document, position.line);
-
+		let index = 0;
 		for (const token of blockTokens) {
-			currentRange = createBlockRange(token, document, position.line, currentRange);
+			while (index < blockTokens.length) {
+				if (isList(token)) {
+					return createListRange(blockTokens.slice(index, blockTokens.length), document, position.line, currentRange);
+				}
+				currentRange = createBlockRange(token, document, position.line, currentRange);
+			}
+			index++;
 		}
 		return currentRange;
 	}
 
 	private async getHeaderSelectionRange(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.SelectionRange | undefined> {
+
 		const tocProvider = new TableOfContentsProvider(this.engine, document);
 		const toc = await tocProvider.getToc();
 
@@ -61,38 +68,6 @@ export default class MarkdownSmartSelect implements vscode.SelectionRangeProvide
 	}
 }
 
-function getFirstChildHeader(document: vscode.TextDocument, header?: TocEntry, toc?: TocEntry[]): vscode.Position | undefined {
-	let childRange: vscode.Position | undefined;
-	if (header && toc) {
-		let children = toc.filter(t => header.location.range.contains(t.location.range) && t.location.range.start.line > header.location.range.start.line).sort((t1, t2) => t1.line - t2.line);
-		if (children.length > 0) {
-			childRange = children[0].location.range.start;
-			const lineText = document.lineAt(childRange.line - 1).text;
-			return childRange ? childRange.translate(-1, lineText.length) : undefined;
-		}
-	}
-	return undefined;
-}
-
-function getTokensForPosition(tokens: Token[], position: vscode.Position, document: vscode.TextDocument): Token[] {
-	// since lists have an end range 1 greater than their last item,
-	// need to determine if we're on a list item line
-	// if not, need to filter such that items on the line right after the last list item
-	// aren't associated with the list since they're not a part of it
-
-	const isListItemOnLine: boolean = document.lineAt(position.line).text.match(new RegExp('^\\s*(\\*|-)\\s+')) !== null;
-	const nonListItemTokens = tokens.filter(token => token.map && (isList(token) ? (token.map[0] <= position.line && token.map[1] - 1 > position.line) : (token.map[0] <= position.line && token.map[1] > position.line)) && isBlockElement(token));
-	const listItemTokens = tokens.filter(token => token.map && (token.map[0] <= position.line && token.map[1] > position.line) && isBlockElement(token));
-
-	const enclosingTokens = isListItemOnLine ? listItemTokens : nonListItemTokens;
-	if (enclosingTokens.length === 0) {
-		return [];
-	}
-
-	const sortedTokens = enclosingTokens.sort((token1, token2) => (token2.map[1] - token2.map[0]) - (token1.map[1] - token1.map[0]));
-	return sortedTokens;
-}
-
 function getHeadersForPosition(toc: TocEntry[], position: vscode.Position): { headers: TocEntry[], headerOnThisLine: boolean } {
 	const enclosingHeaders = toc.filter(header => header.location.range.start.line <= position.line && header.location.range.end.line >= position.line);
 	const sortedHeaders = enclosingHeaders.sort((header1, header2) => (header1.line - position.line) - (header2.line - position.line));
@@ -103,8 +78,26 @@ function getHeadersForPosition(toc: TocEntry[], position: vscode.Position): { he
 	};
 }
 
-function isBlockElement(token: Token): boolean {
-	return !['list_item_close', 'paragraph_close', 'bullet_list_close', 'inline', 'heading_close', 'heading_open'].includes(token.type);
+function createListRange(blocks: Token[], document: vscode.TextDocument, cursorLine: number, parent?: vscode.SelectionRange): vscode.SelectionRange | undefined {
+	let current = parent;
+	let level = blocks[0].level;
+	let i = 0;
+	while (level < 4 && isList(blocks[i])) {
+		if (level === blocks[i].level) {
+			let endLine = level === 0 ? blocks[i].map[1] - 2 : blocks[i].map[1] - 1;
+			current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current);
+			level++;
+		}
+		i++;
+	}
+	if (level === 4) {
+		return current;
+	} else if (i < blocks.length) {
+		for (; i < blocks.length; i++) {
+			current = createBlockRange(blocks[i], document, cursorLine, current);
+		}
+	}
+	return current;
 }
 
 function createHeaderRange(header: TocEntry, isClosestHeaderToPosition: boolean, onHeaderLine: boolean, parent?: vscode.SelectionRange, childStart?: vscode.Position): vscode.SelectionRange | undefined {
@@ -127,14 +120,21 @@ function createHeaderRange(header: TocEntry, isClosestHeaderToPosition: boolean,
 		return new vscode.SelectionRange(contentRange, new vscode.SelectionRange(headerPlusContentRange));
 	}
 }
+function getTokensForPosition(tokens: Token[], position: vscode.Position): Token[] {
+	const enclosingTokens = tokens.filter(token => token.map && (token.map[0] <= position.line && token.map[1] > position.line) && isBlockElement(token));
+	if (enclosingTokens.length === 0) {
+		return [];
+	}
+
+	const sortedTokens = enclosingTokens.sort((token1, token2) => (token2.map[1] - token2.map[0]) - (token1.map[1] - token1.map[0]));
+	return sortedTokens;
+}
 
 function createBlockRange(block: Token, document: vscode.TextDocument, cursorLine: number, parent?: vscode.SelectionRange): vscode.SelectionRange | undefined {
 	if (block.type === 'fence') {
 		return createFencedRange(block, cursorLine, document, parent);
 	} else {
 		let startLine = document.lineAt(block.map[0]).isEmptyOrWhitespace ? block.map[0] + 1 : block.map[0];
-		// this line solves the bug where the next line gets
-		// let endLine = startLine === block.map[1] ? block.map[1] : isList(block.type) && document.lineCount > block.map[1] ? block.map[1] - 2 : block.map[1] - 1;
 		let endLine = startLine === block.map[1] ? block.map[1] : block.map[1] - 1;
 		if (block.type === 'paragraph_open' && block.map[1] - block.map[0] === 2) {
 			startLine = endLine = cursorLine;
@@ -213,12 +213,29 @@ function isList(token: Token): boolean {
 	return token.type ? ['ordered_list_open', 'list_item_open', 'bullet_list_open'].includes(token.type) : false;
 }
 
+function isBlockElement(token: Token): boolean {
+	return !['list_item_close', 'paragraph_close', 'bullet_list_close', 'inline', 'heading_close', 'heading_open'].includes(token.type);
+}
+
 function getRealParent(parent: vscode.SelectionRange, range: vscode.Range) {
 	let currentParent: vscode.SelectionRange | undefined = parent;
 	while (currentParent && !currentParent.range.contains(range)) {
 		currentParent = currentParent.parent;
 	}
 	return currentParent;
+}
+
+function getFirstChildHeader(document: vscode.TextDocument, header?: TocEntry, toc?: TocEntry[]): vscode.Position | undefined {
+	let childRange: vscode.Position | undefined;
+	if (header && toc) {
+		let children = toc.filter(t => header.location.range.contains(t.location.range) && t.location.range.start.line > header.location.range.start.line).sort((t1, t2) => t1.line - t2.line);
+		if (children.length > 0) {
+			childRange = children[0].location.range.start;
+			const lineText = document.lineAt(childRange.line - 1).text;
+			return childRange ? childRange.translate(-1, lineText.length) : undefined;
+		}
+	}
+	return undefined;
 }
 
 function rangeLinesEqual(range: vscode.Range, parent: vscode.Range) {
