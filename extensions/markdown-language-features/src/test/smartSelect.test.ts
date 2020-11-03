@@ -405,7 +405,7 @@ suite('markdown.SmartSelect', () => {
 				`	* level ${CURSOR}2`,
 				`	* level 2`,
 				`* level 1`));
-		assertNestedLineNumbersEqual(ranges![0], [1, 1], [1, 2], [0, 2], [0, 3]);
+		assertNestedLineNumbersEqual(ranges![0], [1, 1], [1, 2], [0, 3]);
 	});
 	test('Smart select last list item not new line', async () => {
 		const ranges = await getSelectionRangesForDocument(

@@ -37,14 +37,12 @@ export default class MarkdownSmartSelect implements vscode.SelectionRangeProvide
 		}
 
 		let currentRange: vscode.SelectionRange | undefined = headerRange ? headerRange : createBlockRange(blockTokens.shift()!, document, position.line);
-		let index = 0;
-		for (const token of blockTokens) {
-			while (index < blockTokens.length) {
-				if (isList(token)) {
-					return createListRange(blockTokens.slice(index, blockTokens.length), document, position.line, currentRange);
-				}
-				currentRange = createBlockRange(token, document, position.line, currentRange);
+
+		for (let index = 0; index < blockTokens.length; index++) {
+			if (isList(blockTokens[index])) {
+				return createListRange(blockTokens.slice(index, blockTokens.length), document, position.line, currentRange);
 			}
+			currentRange = createBlockRange(blockTokens[index], document, position.line, currentRange);
 			index++;
 		}
 		return currentRange;
@@ -84,12 +82,13 @@ function createListRange(blocks: Token[], document: vscode.TextDocument, cursorL
 	let i = 0;
 	while (level < 4 && isList(blocks[i])) {
 		if (level === blocks[i].level) {
-			let endLine = level === 0 ? blocks[i].map[1] - 2 : blocks[i].map[1] - 1;
-			let diff = (blocks[i].map[0] - current!.range.start.line <= 1) && endLine === current?.range.end.line;
-			if (diff) {
-				current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current?.parent);
-			} else {
-				current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current);
+			let startLine = blocks[i].map[0];
+			let endLine = blocks[i].map[1] - 1;
+			let firstListItem = cursorLine === startLine;
+			let isExtraStepRange = startLine === current!.range.start.line && !firstListItem;
+			let parentOnLineAbove = i > 0 ? blocks[i - 1].level < blocks[i].level : false;
+			if (!parentOnLineAbove || !isExtraStepRange) {
+				current = new vscode.SelectionRange(new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length), current);
 			}
 			level++;
 		}
