@@ -417,21 +417,21 @@ suite('markdown.SmartSelect', () => {
 				`item`));
 		assertNestedLineNumbersEqual(ranges![0], [3, 3], [0, 3]);
 	});
-	// test('Smart select bold', async () => {
-	// 	const ranges = await getSelectionRangesForDocument(
-	// 		joinLines(
-	// 			`stuff here **new${CURSOR}item** and here`
-	// 		));
+	test('Smart select bold', async () => {
+		const ranges = await getSelectionRangesForDocument(
+			joinLines(
+				`stuff here **new${CURSOR}item** and here`
+			));
 
-	// 	assertNestedRangesEqual(ranges![0], [0, 2, 0, 7], [0, 11, 0, 22], [0, 0, 0, 30]);
-	// });
-	// test('Smart select images and links', async () => {
-	// 	const ranges = await getSelectionRangesForDocument(
-	// 		joinLines(
-	// 			`stuff here **new${CURSOR}item** and here`
-	// 		));
-	// 	assertNestedLineNumbersEqual(ranges![0], [3, 3], [3, 4], [2, 4], [2, 5], [0, 6], [0, 7]);
-	// });
+		assertNestedRangesEqual(ranges![0], [0, 2, 0, 7], [0, 11, 0, 22], [0, 0, 0, 30]);
+	});
+	test('Smart select images and links', async () => {
+		const ranges = await getSelectionRangesForDocument(
+			joinLines(
+				`stuff here **new${CURSOR}item** and here`
+			));
+		assertNestedLineNumbersEqual(ranges![0], [3, 3], [3, 4], [2, 4], [2, 5], [0, 6], [0, 7]);
+	});
 });
 
 function assertNestedLineNumbersEqual(range: vscode.SelectionRange, ...expectedRanges: [number, number][]) {

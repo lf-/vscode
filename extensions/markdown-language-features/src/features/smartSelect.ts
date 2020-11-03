@@ -85,7 +85,12 @@ function createListRange(blocks: Token[], document: vscode.TextDocument, cursorL
 	while (level < 4 && isList(blocks[i])) {
 		if (level === blocks[i].level) {
 			let endLine = level === 0 ? blocks[i].map[1] - 2 : blocks[i].map[1] - 1;
-			current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current);
+			let diff = (blocks[i].map[0] - current!.range.start.line <= 1) && endLine === current?.range.end.line;
+			if (diff) {
+				current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current?.parent);
+			} else {
+				current = new vscode.SelectionRange(new vscode.Range(blocks[i].map[0], 0, endLine, document.lineAt(endLine).text.length), current);
+			}
 			level++;
 		}
 		i++;
