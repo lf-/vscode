@@ -38,12 +38,8 @@ export default class MarkdownSmartSelect implements vscode.SelectionRangeProvide
 
 		let currentRange: vscode.SelectionRange | undefined = headerRange ? headerRange : createBlockRange(blockTokens.shift()!, document, position.line);
 
-		for (let index = 0; index < blockTokens.length; index++) {
-			if (isList(blockTokens[index])) {
-				return createListRange(blockTokens.slice(index, blockTokens.length), document, position.line, currentRange);
-			}
-			currentRange = createBlockRange(blockTokens[index], document, position.line, currentRange);
-			index++;
+		for (let i = 0; i < blockTokens.length; i++) {
+			currentRange = createBlockRange(blockTokens[i], document, position.line, currentRange);
 		}
 		return currentRange;
 	}
@@ -76,34 +72,6 @@ function getHeadersForPosition(toc: TocEntry[], position: vscode.Position): { he
 	};
 }
 
-function createListRange(blocks: Token[], document: vscode.TextDocument, cursorLine: number, parent?: vscode.SelectionRange): vscode.SelectionRange | undefined {
-	let current = parent;
-	let level = blocks[0].level;
-	let i = 0;
-	while (level < 4 && isList(blocks[i])) {
-		if (level === blocks[i].level) {
-			let startLine = blocks[i].map[0];
-			let endLine = blocks[i].map[1] - 1;
-			let firstListItem = cursorLine === startLine;
-			let isExtraStepRange = startLine === current!.range.start.line && !firstListItem;
-			let parentOnLineAbove = i > 0 ? blocks[i - 1].level < blocks[i].level : false;
-			if (!parentOnLineAbove || !isExtraStepRange) {
-				current = new vscode.SelectionRange(new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length), current);
-			}
-			level++;
-		}
-		i++;
-	}
-	if (level === 4) {
-		return current;
-	} else if (i < blocks.length) {
-		for (; i < blocks.length; i++) {
-			current = createBlockRange(blocks[i], document, cursorLine, current);
-		}
-	}
-	return current;
-}
-
 function createHeaderRange(header: TocEntry, isClosestHeaderToPosition: boolean, onHeaderLine: boolean, parent?: vscode.SelectionRange, childStart?: vscode.Position): vscode.SelectionRange | undefined {
 	const contentRange = new vscode.Range(header.location.range.start.translate(1), header.location.range.end);
 	const headerPlusContentRange = header.location.range;
@@ -129,7 +97,6 @@ function getTokensForPosition(tokens: Token[], position: vscode.Position): Token
 	if (enclosingTokens.length === 0) {
 		return [];
 	}
-
 	const sortedTokens = enclosingTokens.sort((token1, token2) => (token2.map[1] - token2.map[0]) - (token1.map[1] - token1.map[0]));
 	return sortedTokens;
 }
@@ -142,6 +109,8 @@ function createBlockRange(block: Token, document: vscode.TextDocument, cursorLin
 		let endLine = startLine === block.map[1] ? block.map[1] : block.map[1] - 1;
 		if (block.type === 'paragraph_open' && block.map[1] - block.map[0] === 2) {
 			startLine = endLine = cursorLine;
+		} else if (isList(block) && document.lineAt(endLine).isEmptyOrWhitespace) {
+			endLine = endLine - 1;
 		}
 		const startPos = new vscode.Position(startLine, 0);
 		const endPos = new vscode.Position(endLine, document.lineAt(endLine).text?.length ?? 0);

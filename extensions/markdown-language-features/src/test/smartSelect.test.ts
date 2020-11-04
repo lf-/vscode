@@ -285,7 +285,7 @@ suite('markdown.SmartSelect', () => {
 				`- content 2`,
 				`- content 2`,
 				`- content 2`,
-				`${CURSOR}content 2`));
+				`- ${CURSOR}content 2`));
 
 		assertNestedLineNumbersEqual(ranges![0], [17, 17], [14, 17], [13, 17], [9, 17], [8, 17], [1, 17], [0, 17]);
 	});
@@ -309,7 +309,7 @@ suite('markdown.SmartSelect', () => {
 				`- content 2`,
 				`- content 2`,
 				`- content 2`,
-				`content 2${CURSOR}`));
+				`- content 2${CURSOR}`));
 
 		assertNestedLineNumbersEqual(ranges![0], [17, 17], [14, 17], [13, 17], [9, 17], [8, 17], [1, 17], [0, 17]);
 	});
@@ -405,32 +405,16 @@ suite('markdown.SmartSelect', () => {
 				`	* level ${CURSOR}2`,
 				`	* level 2`,
 				`* level 1`));
-		assertNestedLineNumbersEqual(ranges![0], [1, 1], [1, 2], [0, 3]);
+		assertNestedLineNumbersEqual(ranges![0], [1, 1], [1, 2], [0, 2], [0, 3]);
 	});
-	test('Smart select last list item not new line', async () => {
+	test('Smart select last list item', async () => {
 		const ranges = await getSelectionRangesForDocument(
 			joinLines(
 				`- level 1`,
 				`- level 2`,
 				`- level 2`,
-				`- level ${CURSOR}1`,
-				`item`));
+				`- level ${CURSOR}1`));
 		assertNestedLineNumbersEqual(ranges![0], [3, 3], [0, 3]);
-	});
-	test('Smart select bold', async () => {
-		const ranges = await getSelectionRangesForDocument(
-			joinLines(
-				`stuff here **new${CURSOR}item** and here`
-			));
-
-		assertNestedRangesEqual(ranges![0], [0, 2, 0, 7], [0, 11, 0, 22], [0, 0, 0, 30]);
-	});
-	test('Smart select images and links', async () => {
-		const ranges = await getSelectionRangesForDocument(
-			joinLines(
-				`stuff here **new${CURSOR}item** and here`
-			));
-		assertNestedLineNumbersEqual(ranges![0], [3, 3], [3, 4], [2, 4], [2, 5], [0, 6], [0, 7]);
 	});
 });
 
@@ -439,14 +423,6 @@ function assertNestedLineNumbersEqual(range: vscode.SelectionRange, ...expectedR
 	assert.strictEqual(lineage.length, expectedRanges.length, `expected depth: ${expectedRanges.length}, but was ${lineage.length}`);
 	for (let i = 0; i < lineage.length; i++) {
 		assertLineNumbersEqual(lineage[i], expectedRanges[i][0], expectedRanges[i][1], `parent at a depth of ${i}`);
-	}
-}
-
-function assertNestedRangesEqual(range: vscode.SelectionRange, ...expectedRanges: [number, number, number, number][]) {
-	const lineage = getLineage(range);
-	assert.strictEqual(lineage.length, expectedRanges.length, `expected depth: ${expectedRanges.length}, but was ${lineage.length}`);
-	for (let i = 0; i < lineage.length; i++) {
-		assertRangesEqual(lineage[i], expectedRanges[i], `parent at a depth of ${i}`);
 	}
 }
 
@@ -463,13 +439,6 @@ function getLineage(range: vscode.SelectionRange): vscode.SelectionRange[] {
 function assertLineNumbersEqual(selectionRange: vscode.SelectionRange, startLine: number, endLine: number, message: string) {
 	assert.strictEqual(selectionRange.range.start.line, startLine, `failed on start line ${message}`);
 	assert.strictEqual(selectionRange.range.end.line, endLine, `failed on end line ${message}`);
-}
-
-function assertRangesEqual(selectionRange: vscode.SelectionRange, range: number[], message: string) {
-	assert.strictEqual(selectionRange.range.start.line, range[0], `failed on start line ${message}`);
-	assert.strictEqual(selectionRange.range.start.line, range[1], `failed on start char ${message}`);
-	assert.strictEqual(selectionRange.range.end.line, range[2], `failed on end line ${message}`);
-	assert.strictEqual(selectionRange.range.end.line, range[3], `failed on end char ${message}`);
 }
 
 async function getSelectionRangesForDocument(contents: string, pos?: vscode.Position[]) {
